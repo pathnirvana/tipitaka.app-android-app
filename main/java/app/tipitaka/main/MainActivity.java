@@ -44,6 +44,14 @@ public class MainActivity extends AppCompatActivity {
         myWebView.setWebViewClient(client);
 
         String webviewLoadUrl = "file:///android_asset/index.html";
+        String appLinkQuery = "";
+        Intent appLinkIntent = getIntent();
+        if (appLinkIntent != null && appLinkIntent.getData() != null) {
+            appLinkQuery = appLinkIntent.getData().getQuery();
+        }
+        if (appLinkQuery != null && appLinkQuery.length() > 0) { // include any query params from app/deep links
+            webviewLoadUrl += ("?" + appLinkQuery);
+        }
         Log.d("LOG_TAG", "webview Url : " + webviewLoadUrl);
         myWebView.loadUrl(webviewLoadUrl);
     }

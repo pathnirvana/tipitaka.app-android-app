@@ -2,10 +2,6 @@ package app.tipitaka.main;
 
 import android.content.Context;
 import android.database.Cursor;
-import android.database.sqlite.SQLiteDatabase;
-import android.media.session.MediaSession;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
 import android.util.Log;
 import android.webkit.JavascriptInterface;
 import android.widget.Toast;
@@ -16,17 +12,13 @@ import org.json.JSONObject;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Set;
 
 import static android.database.Cursor.FIELD_TYPE_FLOAT;
 import static android.database.Cursor.FIELD_TYPE_INTEGER;
-import static android.database.Cursor.FIELD_TYPE_NULL;
 import static android.database.Cursor.FIELD_TYPE_STRING;
+import static java.lang.Thread.sleep;
 
 public class WebAppInterface {
     Context mContext;
@@ -60,24 +52,18 @@ public class WebAppInterface {
         String vDbName = getVersionedDbName(dbPath);
         Log.d("LOG_TAG", "opendb called " + dbPath + " versioned " + vDbName);
 
-        if (openedDbs.containsKey(vDbName)) {
-            return vDbName;
-        }
-        try {
+        if (!openedDbs.containsKey(vDbName)) {
             File fDbPath = new File(dbPath);
             openedDbs.put(vDbName,
                     new DatabaseHelper(mContext, vDbName, dbPath));
-        } catch (IOException ex) {
-            showToast(ex.toString());
-            return ex.toString();
         }
         return vDbName;
     }
 
     @JavascriptInterface
     public String all(String vDbName, String sql, String[] params) {
-        Cursor cursor = openedDbs.get(vDbName).myDataBase.rawQuery(sql, params);
-        return cursorToJson(cursor);
+        DatabaseHelper dbHelper = openedDbs.get(vDbName);
+        return cursorToJson(dbHelper.runQuery(sql, params));
     }
 
     private String getVersionedDbName(String dbPath) {

@@ -2,29 +2,32 @@ package app.tipitaka.main;
 
 import android.app.ProgressDialog;
 import android.content.Context;
+import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 import android.util.Log;
 
+import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.HashMap;
-import java.util.Map;
+import java.net.URL;
+import java.util.zip.ZipInputStream;
+
+import static java.lang.Thread.sleep;
 
 public class DatabaseHelper extends SQLiteOpenHelper {
     private Context context;
-    public SQLiteDatabase myDataBase;
+    private SQLiteDatabase db = null;
 
     private String vDbName; //the extension may be .sqlite or .db
     private int dbVersion;
     private String inDbAssetsPath;
     private File outDbFile;
-    private static Map<String, String> dbVersions = new HashMap<>();
 
-    public DatabaseHelper(Context context, String vDbName, String inDbPath) throws IOException {
+    public DatabaseHelper(Context context, String vDbName, String inDbPath) {
         super(context, vDbName, null, 1);
         this.context = context;
         this.vDbName = vDbName;
@@ -33,27 +36,52 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         this.outDbFile = context.getDatabasePath(vDbName);
         if (outDbFile.exists()) {
             Log.d("LOG_TAG", "Database exists " + vDbName);
+            openDatabase();
         } else {
             Log.d("LOG_TAG", "Database doesn't exist " + vDbName);
             // try to delete any older versions before copying the new version
             deleteOldVersions(vDbName);
 
             // show a simple progress message in case copying large dbs in old phones takes a long time
-            ProgressDialog dialog = new ProgressDialog(context);
-            dialog.setMessage("Copying the database " + vDbName + ". Please wait.");
+            final ProgressDialog dialog = new ProgressDialog(context);
+            dialog.setMessage("Copying the database " + vDbName + ". Please wait few minutes.");
+            dialog.setCancelable(false);
             dialog.show();
 
-            this.getReadableDatabase();
-            try {
-                copyDatabase();
-            } catch (IOException e) {
-                Log.d("LOG_TAG", "Error copying db " + e.toString());
-                dialog.dismiss();
-                throw new Error("Error copying database");
-            }
-            dialog.dismiss();
+            // dialog will not show up unless a new thread is created
+            Thread mThread = new Thread() {
+                @Override public void run() {
+                    getReadableDatabase();
+                    try {
+                        int copiedSize;
+                        if (inDbAssetsPath.equals("static/db/dict-all.db")) {
+                            copiedSize = copyFromURL("https://tipitaka.lk/library/674");
+                        } else {
+                            copiedSize = copyFromAssets();
+                        }
+                        Log.d("LOG_TAG", "Copied db " + inDbAssetsPath + " of size " + copiedSize);
+                    } catch (IOException e) {
+                        Log.e("LOG_TAG", "Error copying db " + e.toString());
+                        dialog.dismiss();
+                    }
+                    openDatabase();
+                    dialog.dismiss();
+                }
+            };
+            mThread.start();
         }
-        myDataBase = SQLiteDatabase.openDatabase(outDbFile.getPath(), null, SQLiteDatabase.OPEN_READONLY);
+    }
+
+    private void openDatabase() {
+        db = SQLiteDatabase.openDatabase(outDbFile.getPath(), null,
+                SQLiteDatabase.OPEN_READONLY);
+    }
+
+    public Cursor runQuery(String sql, String[] params) {
+        if (db == null) { // wait until the db copy is finished and db opened
+            throw new Error("Please wait until db copy finished and search again.");
+        }
+        return db.rawQuery(sql, params);
     }
 
     private void deleteOldVersions(String vDbName) {
@@ -69,29 +97,51 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         }
     }
 
-    private void copyDatabase() throws IOException {
+    private int copyFromAssets() throws IOException {
         //Open your local db as the input stream
-        InputStream myInput = context.getAssets().open(inDbAssetsPath);
+        InputStream assetsIn = context.getAssets().open(inDbAssetsPath);
 
         //Open the empty db as the output stream
-        OutputStream myOutput = new FileOutputStream(outDbFile);
+        OutputStream databaseOut = new FileOutputStream(outDbFile);
 
         // transfer byte to inputfile to outputfile
-        byte[] buffer = new byte[1024 * 512];
-        int length;
-        while ((length = myInput.read(buffer)) > 0) {
-            myOutput.write(buffer, 0, length);
+        byte[] buffer = new byte[1024 * 128];
+        int length, copiedSize = 0;
+        while ((length = assetsIn.read(buffer)) > 0) {
+            databaseOut.write(buffer, 0, length);
+            copiedSize += length;
         }
 
         //Close the streams
-        myOutput.flush();
-        myOutput.close();
-        myInput.close();
+        databaseOut.flush();
+        databaseOut.close();
+        assetsIn.close();
+        return copiedSize;
+    }
+
+    private int copyFromURL(String urlStr) throws IOException {
+        URL url = new URL(urlStr);
+        ZipInputStream zis = new ZipInputStream(new BufferedInputStream(url.openStream()));
+        OutputStream databaseOut = new FileOutputStream(outDbFile);
+        int length, copiedSize = 0;
+        byte[] buffer = new byte[8192];
+        try {
+            zis.getNextEntry(); // not sure if this is necessary
+            while ((length = zis.read(buffer)) != -1) {
+                databaseOut.write(buffer, 0, length);
+                copiedSize += length;
+            }
+        } finally {
+            zis.close();
+            databaseOut.flush();
+            databaseOut.close();
+        }
+        return copiedSize;
     }
 
     public synchronized void close() {
-        if (myDataBase != null) {
-            myDataBase.close();
+        if (db != null) {
+            db.close();
         }
         super.close();
     }
