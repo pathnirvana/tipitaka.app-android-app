@@ -54,6 +54,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                     getReadableDatabase();
                     try {
                         int copiedSize;
+                        // when building apk for playstore uncomment the condition below
                         if (inDbAssetsPath.equals("static/db/dict-all.db")) {
                             copiedSize = copyFromURL("https://tipitaka.lk/library/674");
                         } else {
